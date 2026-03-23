@@ -9,7 +9,7 @@
   "author": "",
   "license": "ISC",
   "keywords": [],
-  "description": "",
+  "description": "Ledger-based banking backend built with Express and MongoDB.",
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",

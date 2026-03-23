@@ -3,16 +3,8 @@ const authController = require("../controllers/auth.controller");
 
 const router = express.Router();
 
-/**
- * - user register controller
- * - POST /api/auth/register
- */
+// Public authentication endpoints.
 router.post("/register", authController.userRegisterController);
-
-
-
-/** POST api.auth/login  */
-
-router.post('/login',authController.userLoginController); 
+router.post("/login", authController.userLoginController);
 
 module.exports = router;

@@ -2,34 +2,25 @@ const Transaction = require("../models/transaction.model");
 const Ledger = require("../models/ledger.model");
 const accountModel = require("../models/account.model");
 const emailService = require("../services/email.service");
-const mongoose = require("mongoose");
 
 /**
- * - create new transaction
- *  The 10 step transfer the flow
- * validate the request body
- * check if from account exist
- * check if to account exist
- * check if from account have sufficient balance
- * create new transaction with pending status
- * create new ledger for from account with debit type
- * create new ledger for to account with credit type
- * update transaction status to completed
- * if any error occur update transaction status to failed and reverse the ledger entries
+ * Create a transfer between two active accounts using an idempotency key.
  */
-
 async function createTransaction(req, res) {
   const { fromAccount, toAccount, amount, idempotencyKey } = req.body;
 
-  // validate the request body
   if (!fromAccount || !toAccount || !amount || !idempotencyKey) {
     return res.status(400).json({
       message: "All fields are required",
     });
   }
 
-  const fromUserAccount = await accountModel.findOne({ _id: fromAccount });
-  const toUserAccount = await accountModel.findOne({ _id: toAccount });
+  const fromUserAccount = await accountModel
+    .findOne({ _id: fromAccount })
+    .populate("user", "email name");
+  const toUserAccount = await accountModel
+    .findOne({ _id: toAccount })
+    .populate("user", "email name");
 
   if (!fromUserAccount || !toUserAccount) {
     return res.status(404).json({
@@ -37,7 +28,7 @@ async function createTransaction(req, res) {
     });
   }
 
-  //check if transaction exist
+  // Repeated requests with the same client key should resolve to the same transaction outcome.
   const isTransactionExist = await Transaction.findOne({
     idempotencyKey: idempotencyKey,
   });
@@ -73,7 +64,6 @@ async function createTransaction(req, res) {
     }
   }
 
-  // check account status
   if (
     fromUserAccount.status !== "active" ||
     toUserAccount.status !== "active"
@@ -82,7 +72,8 @@ async function createTransaction(req, res) {
       message: "Account is not active",
     });
   }
-  //derive sender balance from ledger
+
+  // Balance is derived from immutable ledger entries, not stored directly on the account.
   const balance = await fromUserAccount.getBalance();
   if (balance < amount) {
     return res.status(400).json({
@@ -115,17 +106,26 @@ async function createTransaction(req, res) {
   transaction.status = "completed";
   await transaction.save();
 
-  // send email to sender and receiver
-  emailService.sendEmail(
-    fromUserAccount.user.email,
-    "Transaction successful",
-    `Your transaction of amount ${amount} to account ${toAccount} is successful.`,
-  );
-  emailService.sendEmail(
-    toUserAccount.user.email,
-    "Transaction successful",
-    `You have received a transaction of amount ${amount} from account ${fromAccount}.`,
-  );
+  // Notification failures are handled inside the email service and should not fail the API request.
+  if (fromUserAccount.user?.email) {
+    emailService.sendTransactionEmail(
+      fromUserAccount.user.email,
+      fromUserAccount.user.name || "User",
+      amount,
+      fromAccount,
+      toAccount
+    );
+  }
+
+  if (toUserAccount.user?.email) {
+    emailService.sendTransactionEmail(
+      toUserAccount.user.email,
+      toUserAccount.user.name || "User",
+      amount,
+      fromAccount,
+      toAccount
+    );
+  }
 
   return res.status(201).json({
     message: "Transaction created successfully",
@@ -137,7 +137,6 @@ async function createTransaction(req, res) {
 async function createInitialFundsTransaction(req, res) {
   const { toAccount, amount, idempotencyKey } = req.body;
 
-  // validate the request body
   if (!toAccount || !amount || !idempotencyKey) {
     return res.status(400).json({
       message: "All fields are required",
@@ -156,6 +155,7 @@ async function createInitialFundsTransaction(req, res) {
     status: "active",
   });
 
+  // Ensure the system user has an active source account before funding others.
   if (!fromuseraccount) {
     fromuseraccount = await accountModel.create({
       user: req.user._id,
@@ -163,15 +163,13 @@ async function createInitialFundsTransaction(req, res) {
     });
   }
 
-  const transaction = new Transaction(
-    {
-      fromAccount: fromuseraccount._id,
-      toAccount,
-      amount,
-      idempotencyKey,
-      status: "pending",
-    }
-  );
+  const transaction = new Transaction({
+    fromAccount: fromuseraccount._id,
+    toAccount,
+    amount,
+    idempotencyKey,
+    status: "pending",
+  });
 
   await transaction.save();
 
