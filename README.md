@@ -13,6 +13,44 @@ This API is built around four main areas:
 
 MongoDB is used for persistence through Mongoose models, and JWT protects private routes.
 
+## System Architecture
+
+```mermaid
+graph TB
+    subgraph Client
+        A[User Interface]
+    end
+    
+    subgraph API Server
+        B[Express Server]
+        C[Auth Middleware]
+        D[Routes]
+        E[Controllers]
+        F[Services]
+    end
+    
+    subgraph Database
+        G[MongoDB]
+        H[User Model]
+        I[Account Model]
+        J[Transaction Model]
+        K[Ledger Model]
+    end
+    
+    A -->|HTTP Requests| B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    G --> I
+    G --> J
+    G --> K
+    
+    E -->|Email Notifications| L[Email Service]
+```
+
 ## Tech Stack
 
 - Node.js
